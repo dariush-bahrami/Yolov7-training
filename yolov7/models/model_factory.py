@@ -1,4 +1,5 @@
 import torch
+
 from pytorch_accelerated.utils import local_process_zero_first
 from yolov7.models.model_configs import (
     get_yolov7_config,
@@ -60,3 +61,47 @@ def create_yolov7_model(
             print(f"Unable to load pretrained model weights from {state_dict_path}")
             print(e)
     return model
+
+
+def save_independent_model(
+    model,
+    architecture,
+    classes,
+    save_path,
+    anchor_sizes_per_layer=None,
+    num_channels=3,
+):
+
+    state_dict = dict(
+        architecture=architecture,
+        anchor_sizes_per_layer=anchor_sizes_per_layer,
+        num_channels=num_channels,
+        model_state_dict=model.state_dict(),
+        classes=classes,
+    )
+    torch.save(state_dict, save_path)
+
+
+@local_process_zero_first
+def load_independent_model(save_path):
+    state_dict = torch.load(save_path)
+    architecture = state_dict.pop("architecture")
+    anchor_sizes_per_layer = state_dict.pop("anchor_sizes_per_layer")
+    num_channels = state_dict.pop("num_channels")
+    model_state_dict = state_dict.pop("model_state_dict")
+    classes = state_dict.pop("classes")
+    config = MODEL_CONFIGS[architecture](
+        num_classes=len(classes),
+        anchor_sizes_per_layer=anchor_sizes_per_layer,
+        num_channels=num_channels,
+    )
+    model = Yolov7Model(model_config=config)
+    model.load_state_dict(model_state_dict)
+    model.eval()
+    return dict(
+        architecture=architecture,
+        anchor_sizes_per_layer=anchor_sizes_per_layer,
+        num_channels=num_channels,
+        model=model,
+        classes=classes,
+    )
